@@ -8,6 +8,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_executable(main 
     "${CMAKE_SOURCE_DIR}//src/main.cpp")
 
+target_compile_definitions(main
+    PRIVATE
+    "$<$<CONFIG:DEBUG>:DEBUG>")
+
 target_link_libraries(main
     PRIVATE
     "${CMAKE_SOURCE_DIR}//libs//libglfw3.a")

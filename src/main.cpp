@@ -54,6 +54,67 @@ const char* FRAGMENT_SHADER_TEXT =
 "    fragment = vec4(color, 1.0);\n"
 "}\n";
 
+void CompileShader(GLenum shaderType, GLuint shader)
+{
+    #ifdef DEBUG
+    constexpr GLint MAX_SHADER_FILE_SIZE = 1024u * 1024u * 4u;
+    static GLchar* INFO_LOG = new GLchar[1024 * 1024 * 4];
+    memset(INFO_LOG, '\0', MAX_SHADER_FILE_SIZE);
+
+    GLint status = {};
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
+
+    GLint infoLogLength = {};
+    glGetShaderInfoLog(shader, MAX_SHADER_FILE_SIZE, &infoLogLength, INFO_LOG);
+
+    if (status == GL_FALSE)
+    {
+        const char* strShaderType = NULL;
+        switch(shaderType)
+        {
+            case GL_VERTEX_SHADER:
+            {
+                strShaderType = "Vertex";
+                break;
+            }
+            case GL_GEOMETRY_SHADER:
+            {
+                strShaderType = "Geometry";
+                break;
+            }
+            case GL_FRAGMENT_SHADER:
+            {
+                strShaderType = "Fragment";
+                break;
+            }
+        }
+
+        printf("Compile failure in %s shader:\n%s\n", strShaderType, INFO_LOG);
+    }
+    #endif
+}
+
+void CompileProgram(GLuint program)
+{
+    #ifdef DEBUG
+    constexpr GLint MAX_PROGRAM_FILE_SIZE = 1024u * 1024u * 4u;
+    static GLchar* INFO_LOG = new GLchar[1024 * 1024 * 4];
+    memset(INFO_LOG, '\0', MAX_PROGRAM_FILE_SIZE);
+
+    GLint status = {};
+    glGetProgramiv(program, GL_LINK_STATUS, &status);
+
+    if (status == GL_FALSE)
+    {
+        GLint infoLogLength = {};
+        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &infoLogLength);
+        glGetProgramInfoLog(program, MAX_PROGRAM_FILE_SIZE, &infoLogLength, INFO_LOG);
+        printf("[OpenGL] Linker failure: %s\n", INFO_LOG);
+    }
+    #endif
+}
+
+
 int main()
 {
     if (!glfwInit())
@@ -86,15 +147,21 @@ int main()
     const GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vertexShader, 1, &VERTEX_SHADER_TEXT, NULL);
     glCompileShader(vertexShader);
+    CompileShader(GL_VERTEX_SHADER, vertexShader);
 
     const GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(fragmentShader, 1, &FRAGMENT_SHADER_TEXT, NULL);
     glCompileShader(fragmentShader);
+    CompileShader(GL_FRAGMENT_SHADER, fragmentShader);
 
     const GLuint program = glCreateProgram();
     glAttachShader(program, vertexShader);
     glAttachShader(program, fragmentShader);
     glLinkProgram(program);
+    CompileProgram(program);
+
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
 
     const GLint vposLocation = glGetAttribLocation(program, "vPos");
     const GLint vcolLocation = glGetAttribLocation(program, "vCol");
@@ -110,6 +177,7 @@ int main()
 
     while(!glfwWindowShouldClose(window))
     {
+        glfwPollEvents();
 
         int width = {};
         int height = {};
@@ -127,7 +195,6 @@ int main()
 
         // keep running
         glfwSwapBuffers(window);
-        glfwPollEvents();
     }
 
     glfwDestroyWindow(window);
