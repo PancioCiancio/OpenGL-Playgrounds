@@ -1,6 +1,8 @@
 // System libraries
 #include <cstdio>
 
+#include "log_program_shader.h"
+
 // Graphics libraries
 #define GLFW_INCLUDE_NONE
 #include <glfw3.h>
@@ -34,19 +36,24 @@ const Vertex VERTICES[3] = {
     {{0.0f, 0.5f}, {0.0f, 0.0f, 1.0f}}
 };
 
+const uint32_t INDICES[] = {0, 1, 2};
+
 const char* VERTEX_SHADER_TEXT =
-"#version 330\n"
-"in vec3 vCol;\n"
-"in vec2 vPos;\n"
+"#version 450 core\n"
+"layout(location = 0) in vec2 aPos;\n"
+"layout(location = 1) in vec3 vCol;\n"
+"out flat int vInstanceID;\n"
 "out vec3 color;\n"
 "void main()\n"
 "{\n"
-"    gl_Position = vec4(vPos, 0.0, 1.0);\n"
+"    gl_Position = vec4(aPos, 0.0, 1.0);\n"
+"    vInstanceID = gl_InstanceID;\n"
 "    color = vCol;\n"
 "}\n";
  
 const char* FRAGMENT_SHADER_TEXT =
-"#version 330\n"
+"#version 450 core\n"
+"in flat int vInstanceID;\n"
 "in vec3 color;\n"
 "out vec4 fragment;\n"
 "void main()\n"
@@ -54,66 +61,14 @@ const char* FRAGMENT_SHADER_TEXT =
 "    fragment = vec4(color, 1.0);\n"
 "}\n";
 
-void CompileShader(GLenum shaderType, GLuint shader)
-{
-    #ifdef DEBUG
-    constexpr GLint MAX_SHADER_FILE_SIZE = 1024u * 1024u * 4u;
-    static GLchar* INFO_LOG = new GLchar[1024 * 1024 * 4];
-    memset(INFO_LOG, '\0', MAX_SHADER_FILE_SIZE);
-
-    GLint status = {};
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
-
-    GLint infoLogLength = {};
-    glGetShaderInfoLog(shader, MAX_SHADER_FILE_SIZE, &infoLogLength, INFO_LOG);
-
-    if (status == GL_FALSE)
-    {
-        const char* strShaderType = NULL;
-        switch(shaderType)
-        {
-            case GL_VERTEX_SHADER:
-            {
-                strShaderType = "Vertex";
-                break;
-            }
-            case GL_GEOMETRY_SHADER:
-            {
-                strShaderType = "Geometry";
-                break;
-            }
-            case GL_FRAGMENT_SHADER:
-            {
-                strShaderType = "Fragment";
-                break;
-            }
-        }
-
-        printf("Compile failure in %s shader:\n%s\n", strShaderType, INFO_LOG);
-    }
-    #endif
-}
-
-void CompileProgram(GLuint program)
-{
-    #ifdef DEBUG
-    constexpr GLint MAX_PROGRAM_FILE_SIZE = 1024u * 1024u * 4u;
-    static GLchar* INFO_LOG = new GLchar[1024 * 1024 * 4];
-    memset(INFO_LOG, '\0', MAX_PROGRAM_FILE_SIZE);
-
-    GLint status = {};
-    glGetProgramiv(program, GL_LINK_STATUS, &status);
-
-    if (status == GL_FALSE)
-    {
-        GLint infoLogLength = {};
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &infoLogLength);
-        glGetProgramInfoLog(program, MAX_PROGRAM_FILE_SIZE, &infoLogLength, INFO_LOG);
-        printf("[OpenGL] Linker failure: %s\n", INFO_LOG);
-    }
-    #endif
-}
-
+// 1. The standard Indirect Draw Command struct
+struct DrawElementsIndirectCommand {
+    GLuint count;         // Number of indices to draw
+    GLuint instanceCount; // Number of instances to draw
+    GLuint firstIndex;    // Offset into index buffer
+    GLuint baseVertex;    // Offset into vertex buffer
+    GLuint baseInstance;  // Offset for gl_InstanceID
+};
 
 int main()
 {
@@ -124,8 +79,8 @@ int main()
 
     glfwSetErrorCallback(GLFW_ERROR_CALLBACK);
 
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     GLFWwindow* window = glfwCreateWindow(640, 400, "Image Processing", NULL, NULL);
 
@@ -139,41 +94,59 @@ int main()
     gladLoadGL(glfwGetProcAddress);
     glfwSwapInterval(1);
 
-    GLuint vertexBuffer = {};
-    glGenBuffers(1, &vertexBuffer);
-    glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(VERTICES), VERTICES, GL_STATIC_DRAW);
+    GLuint vao = {};
+    GLuint vbo = {};
+    GLuint ebo = {};
 
+    glGenVertexArrays(1, &vao);
+    glGenBuffers(1, &vbo);
+    glGenBuffers(1, &ebo);
+
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(VERTICES), VERTICES, GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(INDICES), INDICES, GL_STATIC_DRAW);
+
+    // Vertex attributes (pos and color)
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Pos));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Col));
+
+    DrawElementsIndirectCommand cmd = {};
+    cmd.count           = 3;
+    cmd.instanceCount   = 1;
+    cmd.firstIndex      = 0;
+    cmd.baseVertex      = 0;
+    cmd.baseInstance    = 0;
+
+    GLuint indirectBuffer = {};
+    glGenBuffers(1, &indirectBuffer);
+    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, indirectBuffer);
+    glBufferData(GL_DRAW_INDIRECT_BUFFER, sizeof(DrawElementsIndirectCommand), &cmd, GL_STATIC_DRAW);
+
+    // Vertex shader
     const GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vertexShader, 1, &VERTEX_SHADER_TEXT, NULL);
     glCompileShader(vertexShader);
-    CompileShader(GL_VERTEX_SHADER, vertexShader);
+    LogShaderErrors(GL_VERTEX_SHADER, vertexShader);
 
+    // Fragment shader
     const GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(fragmentShader, 1, &FRAGMENT_SHADER_TEXT, NULL);
     glCompileShader(fragmentShader);
-    CompileShader(GL_FRAGMENT_SHADER, fragmentShader);
+    LogShaderErrors(GL_FRAGMENT_SHADER, fragmentShader);
 
+    // Assembly program
     const GLuint program = glCreateProgram();
     glAttachShader(program, vertexShader);
     glAttachShader(program, fragmentShader);
     glLinkProgram(program);
-    CompileProgram(program);
+    LogProgramErrors(program);
 
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
-
-    const GLint vposLocation = glGetAttribLocation(program, "vPos");
-    const GLint vcolLocation = glGetAttribLocation(program, "vCol");
-
-    GLuint vertexArray = {};
-    glGenVertexArrays(1, &vertexArray);
-    glBindVertexArray(vertexArray);
-    glEnableVertexAttribArray(vposLocation);
-    glVertexAttribPointer(vposLocation, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Pos));
-    glEnableVertexAttribArray(vcolLocation);
-    glVertexAttribPointer(vcolLocation, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Col));
-
 
     while(!glfwWindowShouldClose(window))
     {
@@ -190,8 +163,9 @@ int main()
         glClear(GL_COLOR_BUFFER_BIT);
 
         glUseProgram(program);
-        glBindVertexArray(vertexArray);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glBindVertexArray(vao);
+        glBindBuffer(GL_DRAW_INDIRECT_BUFFER, indirectBuffer);
+        glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr, 1, sizeof(DrawElementsIndirectCommand));
 
         // keep running
         glfwSwapBuffers(window);
