@@ -19,4 +19,5 @@ target_link_libraries(main
 target_include_directories(main 
     PRIVATE 
     "${CMAKE_SOURCE_DIR}//src"
-    "${CMAKE_SOURCE_DIR}//include")
+    "${CMAKE_SOURCE_DIR}//include"
+    "${CMAKE_SOURCE_DIR}//assets")

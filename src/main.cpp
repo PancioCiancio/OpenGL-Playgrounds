@@ -1,6 +1,8 @@
 // System libraries
 #include <cstdio>
 
+#include "shaders/triangle.h"
+#include "geometries/primitives.h"
 #include "log_program_shader.h"
 
 // Graphics libraries
@@ -23,51 +25,27 @@ void GLFW_KEY_CALLBACK(GLFWwindow* window, int key, int scancode, int action, in
     }
 }
 
-
-typedef struct Vertex
+struct alignas(64) SharedStorageBuffer
 {
-    float Pos[2];
-    float Col[3];
-} Vertex;
-
-const Vertex VERTICES[3] = {
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{0.0f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+    float ModelMat[16] = {};
 };
 
-const uint32_t INDICES[] = {0, 1, 2};
+const SharedStorageBuffer SSBO[1] = {
+    {   
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f  
+    },
+};
 
-const char* VERTEX_SHADER_TEXT =
-"#version 450 core\n"
-"layout(location = 0) in vec2 aPos;\n"
-"layout(location = 1) in vec3 vCol;\n"
-"out flat int vInstanceID;\n"
-"out vec3 color;\n"
-"void main()\n"
-"{\n"
-"    gl_Position = vec4(aPos, 0.0, 1.0);\n"
-"    vInstanceID = gl_InstanceID;\n"
-"    color = vCol;\n"
-"}\n";
- 
-const char* FRAGMENT_SHADER_TEXT =
-"#version 450 core\n"
-"in flat int vInstanceID;\n"
-"in vec3 color;\n"
-"out vec4 fragment;\n"
-"void main()\n"
-"{\n"
-"    fragment = vec4(color, 1.0);\n"
-"}\n";
-
-// 1. The standard Indirect Draw Command struct
-struct DrawElementsIndirectCommand {
-    GLuint count;         // Number of indices to draw
-    GLuint instanceCount; // Number of instances to draw
-    GLuint firstIndex;    // Offset into index buffer
-    GLuint baseVertex;    // Offset into vertex buffer
-    GLuint baseInstance;  // Offset for gl_InstanceID
+struct DrawElementsIndirectCommand 
+{
+    GLuint count            = {}; // Number of indices to draw
+    GLuint instanceCount    = {}; // Number of instances to draw
+    GLuint firstIndex       = {}; // Offset into index buffer
+    GLuint baseVertex       = {}; // Offset into vertex buffer
+    GLuint baseInstance     = {}; // Offset for gl_InstanceID
 };
 
 int main()
@@ -94,47 +72,85 @@ int main()
     gladLoadGL(glfwGetProcAddress);
     glfwSwapInterval(1);
 
-    GLuint vao = {};
-    GLuint vbo = {};
-    GLuint ebo = {};
+    GLuint vao              = {};
+    GLuint vboPos           = {};
+    GLuint vboNorm          = {};
+    GLuint vboUV            = {};
+    GLuint ebo              = {};
+    GLuint ssbo             = {};
+    GLuint indirectBuffer   = {};
 
-    glGenVertexArrays(1, &vao);
-    glGenBuffers(1, &vbo);
-    glGenBuffers(1, &ebo);
+    glCreateBuffers(1, &vboPos);
+    glNamedBufferData(vboPos, sizeof(QUAD_POSITIONS), QUAD_POSITIONS, GL_STATIC_DRAW);
 
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(VERTICES), VERTICES, GL_STATIC_DRAW);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(INDICES), INDICES, GL_STATIC_DRAW);
+    glCreateBuffers(1, &vboNorm);
+    glNamedBufferData(vboNorm, sizeof(QUAD_NORMALS), QUAD_NORMALS, GL_STATIC_DRAW);
 
-    // Vertex attributes (pos and color)
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Pos));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Col));
+    glCreateBuffers(1, &vboUV);
+    glNamedBufferData(vboUV, sizeof(QUAD_UVS), QUAD_UVS, GL_STATIC_DRAW);
 
-    DrawElementsIndirectCommand cmd = {};
-    cmd.count           = 3;
-    cmd.instanceCount   = 1;
-    cmd.firstIndex      = 0;
-    cmd.baseVertex      = 0;
-    cmd.baseInstance    = 0;
+    glCreateBuffers(1, &ebo);
+    glNamedBufferData(ebo, sizeof(QUAD_INDICES), QUAD_INDICES, GL_STATIC_DRAW);
 
-    GLuint indirectBuffer = {};
-    glGenBuffers(1, &indirectBuffer);
-    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, indirectBuffer);
-    glBufferData(GL_DRAW_INDIRECT_BUFFER, sizeof(DrawElementsIndirectCommand), &cmd, GL_STATIC_DRAW);
+    glCreateBuffers(1, &ssbo);
+    glNamedBufferData(ssbo, sizeof(SSBO), SSBO, GL_STATIC_DRAW);
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo);
+
+    // 2. Direct VAO Setup
+    glCreateVertexArrays(1, &vao);
+    glVertexArrayElementBuffer(vao, ebo); // Directly attach EBO to VAO
+
+    // --- Position (Location 0) ---
+    glEnableVertexArrayAttrib(vao, 0);
+    glVertexArrayAttribFormat(vao, 0, 3, GL_FLOAT, GL_FALSE, 0); 
+    glVertexArrayAttribBinding(vao, 0, 0); // Link attribute 0 to VAO binding point 0
+    glVertexArrayVertexBuffer(vao, 0, vboPos, 0, sizeof(float) * 3); // Attach vboPos to VAO binding point 0
+
+    // --- Normal (Location 1) ---
+    glEnableVertexArrayAttrib(vao, 1);
+    glVertexArrayAttribFormat(vao, 1, 3, GL_FLOAT, GL_FALSE, 0);
+    glVertexArrayAttribBinding(vao, 1, 1); // Link attribute 1 to VAO binding point 1
+    glVertexArrayVertexBuffer(vao, 1, vboNorm, 0, sizeof(float) * 3);
+
+    // --- UV (Location 2) ---
+    glEnableVertexArrayAttrib(vao, 2);
+    glVertexArrayAttribFormat(vao, 2, 2, GL_FLOAT, GL_FALSE, 0);
+    glVertexArrayAttribBinding(vao, 2, 2); // Link attribute 2 to VAO binding point 2
+    glVertexArrayVertexBuffer(vao, 2, vboUV, 0, sizeof(float) * 2);
+
+    // 3. Indirect Command Buffer Setup
+    DrawElementsIndirectCommand cmd = {6, 1, 0, 0, 0};
+    glCreateBuffers(1, &indirectBuffer);
+    glNamedBufferData(indirectBuffer, sizeof(DrawElementsIndirectCommand), &cmd, GL_STATIC_DRAW);
+
+    #ifdef DEBUG
+    // Define debug symbol that can be red from capture tools like RenderDoc or NVidiaNsight
+    const char* vboPosName = "VBO_Positions";
+    glObjectLabel(GL_BUFFER, vboPos, -1, vboPosName);
+
+    const char* vboNormName = "VBO_Normals";
+    glObjectLabel(GL_BUFFER, vboNorm, -1, vboNormName);
+
+    const char* vboUVsName = "VBO_UVs";
+    glObjectLabel(GL_BUFFER, vboUV, -1, vboUVsName);
+
+    const char* eboName = "EBO_Indices";
+    glObjectLabel(GL_BUFFER, ssbo, -1, eboName);
+
+    const char* ssboName = "SSBO_InstanceData";
+    glObjectLabel(GL_BUFFER, ssbo, -1, ssboName);
+    #endif
 
     // Vertex shader
     const GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &VERTEX_SHADER_TEXT, NULL);
+    glShaderSource(vertexShader, 1, &Shader::Triangle::VERTEX, NULL);
     glCompileShader(vertexShader);
     LogShaderErrors(GL_VERTEX_SHADER, vertexShader);
 
     // Fragment shader
     const GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &FRAGMENT_SHADER_TEXT, NULL);
+    glShaderSource(fragmentShader, 1, &Shader::Triangle::FRAGMENT, NULL);
     glCompileShader(fragmentShader);
     LogShaderErrors(GL_FRAGMENT_SHADER, fragmentShader);
 
