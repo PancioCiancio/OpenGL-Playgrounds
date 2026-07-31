@@ -6,6 +6,8 @@ namespace Shader { namespace Triangle {
     
     const char* VERTEX = R"(
     #version 450 core
+    #extension GL_ARB_shader_draw_parameters : require // Add this extension
+
     struct InstanceData
     {
         mat4 modelMat;
@@ -24,17 +26,19 @@ namespace Shader { namespace Triangle {
     
     void main()
     {
-        gl_Position = instances[gl_InstanceID].modelMat * vec4(vPos, 1.0);
-
-        vInstanceID = gl_InstanceID;
-
-        color = vNorm;
+        int actualInstanceIndex = gl_InstanceID + gl_BaseInstanceARB;
+        
+        gl_Position = instances[actualInstanceIndex].modelMat * vec4(vPos, 1.0);
+        vInstanceID = actualInstanceIndex;
+        color = vec3(vUVs, 0.0);
     }
     )";
 
 
     const char* FRAGMENT = R"(
     #version 450 core
+    #extension GL_ARB_shader_draw_parameters : require // Add this extension
+
     in flat int vInstanceID;
     in vec3 color;
     out vec4 fragment;

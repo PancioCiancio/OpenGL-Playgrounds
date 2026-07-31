@@ -75,6 +75,10 @@ const float TRIANGLE_UVS[6] = {
     0.5f, 1.0f
 };
 
+const unsigned int TRIANGLE_INDICES[6] = {
+    0, 1, 2
+};
+
 // --- QUAD (4 Vertices, 6 Indices) ---
 const int QUAD_VERTEX_COUNT = 4;
 const int QUAD_INDEX_COUNT  = 6;

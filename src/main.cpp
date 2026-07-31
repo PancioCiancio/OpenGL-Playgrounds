@@ -1,5 +1,7 @@
 // System libraries
 #include <cstdio>
+#include <chrono>
+#include <thread>
 
 #include "shaders/triangle.h"
 #include "geometries/primitives.h"
@@ -30,12 +32,18 @@ struct alignas(64) SharedStorageBuffer
     float ModelMat[16] = {};
 };
 
-const SharedStorageBuffer SSBO[1] = {
+const SharedStorageBuffer SSBO[] = {
     {   
         1.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 1.0f, 0.0f, 0.0f,
         0.0f, 0.0f, 1.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f  
+    },
+    {   
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.8f, 0.0f, 0.0f, 1.0f  
     },
 };
 
@@ -47,6 +55,10 @@ struct DrawElementsIndirectCommand
     GLuint baseVertex       = {}; // Offset into vertex buffer
     GLuint baseInstance     = {}; // Offset for gl_InstanceID
 };
+
+constexpr size_t MAX_VERTEX_BUFFER_SIZE = 1024 * 1024 * 4;  // 4mb
+constexpr size_t MAX_INDEX_BUFFER_SIZE = 1024 * 1024 * 4;   // 4mb
+constexpr size_t MAX_INSTANCES = 10000;
 
 int main()
 {
@@ -81,19 +93,24 @@ int main()
     GLuint indirectBuffer   = {};
 
     glCreateBuffers(1, &vboPos);
-    glNamedBufferData(vboPos, sizeof(QUAD_POSITIONS), QUAD_POSITIONS, GL_STATIC_DRAW);
+    glNamedBufferStorage(vboPos, MAX_VERTEX_BUFFER_SIZE, nullptr, GL_DYNAMIC_STORAGE_BIT);
+    // glNamedBufferData(vboPos, sizeof(QUAD_POSITIONS), QUAD_POSITIONS, GL_STATIC_DRAW);
 
     glCreateBuffers(1, &vboNorm);
-    glNamedBufferData(vboNorm, sizeof(QUAD_NORMALS), QUAD_NORMALS, GL_STATIC_DRAW);
+    glNamedBufferStorage(vboNorm, MAX_VERTEX_BUFFER_SIZE, nullptr, GL_DYNAMIC_STORAGE_BIT);
+    // glNamedBufferData(vboNorm, sizeof(QUAD_NORMALS), QUAD_NORMALS, GL_STATIC_DRAW);
 
     glCreateBuffers(1, &vboUV);
-    glNamedBufferData(vboUV, sizeof(QUAD_UVS), QUAD_UVS, GL_STATIC_DRAW);
+    glNamedBufferStorage(vboUV, MAX_VERTEX_BUFFER_SIZE, nullptr, GL_DYNAMIC_STORAGE_BIT);
+    // glNamedBufferData(vboUV, sizeof(QUAD_UVS), QUAD_UVS, GL_STATIC_DRAW);
 
     glCreateBuffers(1, &ebo);
-    glNamedBufferData(ebo, sizeof(QUAD_INDICES), QUAD_INDICES, GL_STATIC_DRAW);
+    glNamedBufferStorage(ebo, MAX_INDEX_BUFFER_SIZE, nullptr, GL_DYNAMIC_STORAGE_BIT);
+    // glNamedBufferData(ebo, sizeof(QUAD_INDICES), QUAD_INDICES, GL_STATIC_DRAW);
 
     glCreateBuffers(1, &ssbo);
-    glNamedBufferData(ssbo, sizeof(SSBO), SSBO, GL_STATIC_DRAW);
+    glNamedBufferStorage(ssbo, MAX_INSTANCES * sizeof(SharedStorageBuffer), nullptr, GL_DYNAMIC_STORAGE_BIT);
+    // glNamedBufferData(ssbo, sizeof(SSBO), SSBO, GL_STATIC_DRAW);
 
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo);
 
@@ -120,9 +137,25 @@ int main()
     glVertexArrayVertexBuffer(vao, 2, vboUV, 0, sizeof(float) * 2);
 
     // 3. Indirect Command Buffer Setup
-    DrawElementsIndirectCommand cmd = {6, 1, 0, 0, 0};
+    DrawElementsIndirectCommand cmd[] = {
+        {6, 1, 0, 0, 0},
+        {3, 1, 6, 4, 1}};
     glCreateBuffers(1, &indirectBuffer);
-    glNamedBufferData(indirectBuffer, sizeof(DrawElementsIndirectCommand), &cmd, GL_STATIC_DRAW);
+    glNamedBufferData(indirectBuffer, sizeof(cmd), &cmd, GL_STATIC_DRAW);
+
+    // Allocate one quad
+    glNamedBufferSubData(vboPos,    0, sizeof(QUAD_POSITIONS),  QUAD_POSITIONS);
+    glNamedBufferSubData(vboNorm,   0, sizeof(QUAD_NORMALS),    QUAD_NORMALS);
+    glNamedBufferSubData(vboUV,     0, sizeof(QUAD_UVS),        QUAD_UVS);
+    glNamedBufferSubData(ebo,       0, sizeof(QUAD_INDICES),    QUAD_INDICES);
+
+    // Allocate one triangle
+    glNamedBufferSubData(vboPos,    sizeof(QUAD_POSITIONS), sizeof(TRIANGLE_POSITIONS),  TRIANGLE_POSITIONS);
+    glNamedBufferSubData(vboNorm,   sizeof(QUAD_NORMALS),   sizeof(TRIANGLE_NORMALS),    TRIANGLE_NORMALS);
+    glNamedBufferSubData(vboUV,     sizeof(QUAD_UVS),       sizeof(TRIANGLE_UVS),        TRIANGLE_UVS);
+    glNamedBufferSubData(ebo,       sizeof(QUAD_INDICES),   sizeof(TRIANGLE_INDICES),    TRIANGLE_INDICES);
+
+    glNamedBufferSubData(ssbo, 0, sizeof(SSBO), SSBO);
 
     #ifdef DEBUG
     // Define debug symbol that can be red from capture tools like RenderDoc or NVidiaNsight
@@ -136,7 +169,7 @@ int main()
     glObjectLabel(GL_BUFFER, vboUV, -1, vboUVsName);
 
     const char* eboName = "EBO_Indices";
-    glObjectLabel(GL_BUFFER, ssbo, -1, eboName);
+    glObjectLabel(GL_BUFFER, ebo, -1, eboName);
 
     const char* ssboName = "SSBO_InstanceData";
     glObjectLabel(GL_BUFFER, ssbo, -1, ssboName);
@@ -164,8 +197,15 @@ int main()
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
+    // Loop
+    constexpr double TARGET_FPS = 60.0;
+    constexpr double TARGET_FRAME_TIME = 1.0 / TARGET_FPS;
+
+
     while(!glfwWindowShouldClose(window))
     {
+        double frameStartTime = glfwGetTime();
+
         glfwPollEvents();
 
         int width = {};
@@ -181,10 +221,20 @@ int main()
         glUseProgram(program);
         glBindVertexArray(vao);
         glBindBuffer(GL_DRAW_INDIRECT_BUFFER, indirectBuffer);
-        glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr, 1, sizeof(DrawElementsIndirectCommand));
+        glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr, 2, sizeof(DrawElementsIndirectCommand));
 
         // keep running
         glfwSwapBuffers(window);
+
+
+        double frameEndTime = glfwGetTime();
+        double timeTaken = frameEndTime - frameStartTime;
+
+        if (timeTaken < TARGET_FRAME_TIME)
+        {
+            double timeToSleep = TARGET_FRAME_TIME - timeTaken;
+            std::this_thread::sleep_for(std::chrono::duration<double>(timeToSleep));
+        }
     }
 
     glfwDestroyWindow(window);
