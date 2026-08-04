@@ -86,6 +86,8 @@ int main()
     gladLoadGL(glfwGetProcAddress);
     glfwSwapInterval(1);
 
+
+    // Define the handles of all buffers
     GLuint vao              = {};
     GLuint vboPos           = {};
     GLuint vboNorm          = {};
@@ -94,65 +96,62 @@ int main()
     GLuint ssbo             = {};
     GLuint indirectBuffer   = {};
 
-    glCreateBuffers(1, &vboPos);
-    glNamedBufferStorage(vboPos, MAX_VERTEX_BUFFER_SIZE, nullptr, GL_DYNAMIC_STORAGE_BIT);
-
-    glCreateBuffers(1, &vboNorm);
-    glNamedBufferStorage(vboNorm, MAX_VERTEX_BUFFER_SIZE, nullptr, GL_DYNAMIC_STORAGE_BIT);
-
-    glCreateBuffers(1, &vboUV);
-    glNamedBufferStorage(vboUV, MAX_VERTEX_BUFFER_SIZE, nullptr, GL_DYNAMIC_STORAGE_BIT);
-
-    glCreateBuffers(1, &ebo);
-    glNamedBufferStorage(ebo, MAX_INDEX_BUFFER_SIZE, nullptr, GL_DYNAMIC_STORAGE_BIT);
-
-    glCreateBuffers(1, &ssbo);
-    glNamedBufferStorage(ssbo, MAX_INSTANCES * sizeof(SharedStorageBuffer), nullptr, GL_DYNAMIC_STORAGE_BIT);
-
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo);
-
-    // 2. Direct VAO Setup
+    // Create the buffers
     glCreateVertexArrays(1, &vao);
-    glVertexArrayElementBuffer(vao, ebo); // Directly attach EBO to VAO
+    glCreateBuffers(1, &vboPos);
+    glCreateBuffers(1, &vboNorm);
+    glCreateBuffers(1, &vboUV);
+    glCreateBuffers(1, &ebo);
+    glCreateBuffers(1, &ssbo);
+    glCreateBuffers(1, &indirectBuffer);
 
-    // --- Position (Location 0) ---
+    // Initialize a buffer object's immutable data store
+    glNamedBufferStorage(vboPos,    MAX_VERTEX_BUFFER_SIZE, nullptr, GL_DYNAMIC_STORAGE_BIT);
+    glNamedBufferStorage(vboNorm,   MAX_VERTEX_BUFFER_SIZE, nullptr, GL_DYNAMIC_STORAGE_BIT);
+    glNamedBufferStorage(vboUV,     MAX_VERTEX_BUFFER_SIZE, nullptr, GL_DYNAMIC_STORAGE_BIT);
+    glNamedBufferStorage(ebo,       MAX_INDEX_BUFFER_SIZE,  nullptr, GL_DYNAMIC_STORAGE_BIT);
+    glNamedBufferStorage(ssbo,      MAX_INSTANCES * sizeof(SharedStorageBuffer), nullptr, GL_DYNAMIC_STORAGE_BIT);
+    glNamedBufferStorage(indirectBuffer, MAX_INSTANCES, nullptr, GL_DYNAMIC_STORAGE_BIT);
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo);    // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBindBufferBase.xhtml
+    glVertexArrayElementBuffer(vao, ebo);                   // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glVertexArrayElementBuffer.xhtml
+
+    // Shader position (location = 0)
     glEnableVertexArrayAttrib(vao, 0);
     glVertexArrayAttribFormat(vao, 0, 3, GL_FLOAT, GL_FALSE, 0); 
-    glVertexArrayAttribBinding(vao, 0, 0); // Link attribute 0 to VAO binding point 0
-    glVertexArrayVertexBuffer(vao, 0, vboPos, 0, sizeof(float) * 3); // Attach vboPos to VAO binding point 0
+    glVertexArrayAttribBinding(vao, 0, 0);                              // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glVertexAttribBinding.xhtml
+    glVertexArrayVertexBuffer(vao, 0, vboPos, 0, sizeof(float) * 3);    // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBindVertexBuffer.xhtml
 
-    // --- Normal (Location 1) ---
+    // Shader's normals (location = 1)
     glEnableVertexArrayAttrib(vao, 1);
     glVertexArrayAttribFormat(vao, 1, 3, GL_FLOAT, GL_FALSE, 0);
-    glVertexArrayAttribBinding(vao, 1, 1); // Link attribute 1 to VAO binding point 1
-    glVertexArrayVertexBuffer(vao, 1, vboNorm, 0, sizeof(float) * 3);
+    glVertexArrayAttribBinding(vao, 1, 1);                              // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glVertexAttribBinding.xhtml
+    glVertexArrayVertexBuffer(vao, 1, vboNorm, 0, sizeof(float) * 3);   // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBindVertexBuffer.xhtml
 
-    // --- UV (Location 2) ---
+    // Shader's uvs (location = 2)
     glEnableVertexArrayAttrib(vao, 2);
     glVertexArrayAttribFormat(vao, 2, 2, GL_FLOAT, GL_FALSE, 0);
-    glVertexArrayAttribBinding(vao, 2, 2); // Link attribute 2 to VAO binding point 2
-    glVertexArrayVertexBuffer(vao, 2, vboUV, 0, sizeof(float) * 2);
+    glVertexArrayAttribBinding(vao, 2, 2);                              // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glVertexAttribBinding.xhtml
+    glVertexArrayVertexBuffer(vao, 2, vboUV, 0, sizeof(float) * 2);     // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBindVertexBuffer.xhtml
 
-    // 3. Indirect Command Buffer Setup
-    DrawIndexedIndirectCommand cmd[] = {
-        {6, 1, 0, 0, 0},
-        {3, 1, 6, 4, 1}};
-    glCreateBuffers(1, &indirectBuffer);
-    glNamedBufferData(indirectBuffer, sizeof(cmd), &cmd, GL_STATIC_DRAW);
-
-    // Allocate one quad
+    // Write quad data
     glNamedBufferSubData(vboPos,    0, sizeof(QUAD_POSITIONS),  QUAD_POSITIONS);
     glNamedBufferSubData(vboNorm,   0, sizeof(QUAD_NORMALS),    QUAD_NORMALS);
     glNamedBufferSubData(vboUV,     0, sizeof(QUAD_UVS),        QUAD_UVS);
     glNamedBufferSubData(ebo,       0, sizeof(QUAD_INDICES),    QUAD_INDICES);
 
-    // Allocate one triangle
+    // Write triangle data taking into account the quad offsets
     glNamedBufferSubData(vboPos,    sizeof(QUAD_POSITIONS), sizeof(TRIANGLE_POSITIONS),  TRIANGLE_POSITIONS);
     glNamedBufferSubData(vboNorm,   sizeof(QUAD_NORMALS),   sizeof(TRIANGLE_NORMALS),    TRIANGLE_NORMALS);
     glNamedBufferSubData(vboUV,     sizeof(QUAD_UVS),       sizeof(TRIANGLE_UVS),        TRIANGLE_UVS);
     glNamedBufferSubData(ebo,       sizeof(QUAD_INDICES),   sizeof(TRIANGLE_INDICES),    TRIANGLE_INDICES);
 
+    // Write the ssbo (model matrices of quad and triangle)
     glNamedBufferSubData(ssbo, 0, sizeof(SSBO), SSBO);
+
+    // Write the draw commands
+    DrawIndexedIndirectCommand cmd[] = {{6, 1, 0, 0, 0}, {3, 1, 6, 4, 1}};
+    glNamedBufferSubData(indirectBuffer, 0, sizeof(cmd), cmd);
 
     #ifdef DEBUG
     // Define debug symbol that can be red from capture tools like RenderDoc or NVidiaNsight
