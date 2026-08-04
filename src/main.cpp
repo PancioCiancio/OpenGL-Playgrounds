@@ -47,13 +47,15 @@ const SharedStorageBuffer SSBO[] = {
     },
 };
 
-struct DrawElementsIndirectCommand 
+/// @brief Structure specifying an indexed indirect drawing command
+/// @see https://registry.khronos.org/VulkanSC/specs/1.0-extensions/man/html/VkDrawIndexedIndirectCommand.html
+struct DrawIndexedIndirectCommand 
 {
-    GLuint count            = {}; // Number of indices to draw
-    GLuint instanceCount    = {}; // Number of instances to draw
-    GLuint firstIndex       = {}; // Offset into index buffer
-    GLuint baseVertex       = {}; // Offset into vertex buffer
-    GLuint baseInstance     = {}; // Offset for gl_InstanceID
+    GLuint indexCount       = {};   // Is the number of vertices to draw.
+    GLuint instanceCount    = {};   // Is the number of instances to draw.
+    GLuint firstIndex       = {};   // Is the base index within the index buffer.
+    GLuint vertexOffset     = {};   // Is the value added to the vertex index before indexing into the vertex buffer.
+    GLuint firstInstance    = {};   // Is the instance ID of the first instance to draw.
 };
 
 constexpr size_t MAX_VERTEX_BUFFER_SIZE = 1024 * 1024 * 4;  // 4mb
@@ -94,23 +96,18 @@ int main()
 
     glCreateBuffers(1, &vboPos);
     glNamedBufferStorage(vboPos, MAX_VERTEX_BUFFER_SIZE, nullptr, GL_DYNAMIC_STORAGE_BIT);
-    // glNamedBufferData(vboPos, sizeof(QUAD_POSITIONS), QUAD_POSITIONS, GL_STATIC_DRAW);
 
     glCreateBuffers(1, &vboNorm);
     glNamedBufferStorage(vboNorm, MAX_VERTEX_BUFFER_SIZE, nullptr, GL_DYNAMIC_STORAGE_BIT);
-    // glNamedBufferData(vboNorm, sizeof(QUAD_NORMALS), QUAD_NORMALS, GL_STATIC_DRAW);
 
     glCreateBuffers(1, &vboUV);
     glNamedBufferStorage(vboUV, MAX_VERTEX_BUFFER_SIZE, nullptr, GL_DYNAMIC_STORAGE_BIT);
-    // glNamedBufferData(vboUV, sizeof(QUAD_UVS), QUAD_UVS, GL_STATIC_DRAW);
 
     glCreateBuffers(1, &ebo);
     glNamedBufferStorage(ebo, MAX_INDEX_BUFFER_SIZE, nullptr, GL_DYNAMIC_STORAGE_BIT);
-    // glNamedBufferData(ebo, sizeof(QUAD_INDICES), QUAD_INDICES, GL_STATIC_DRAW);
 
     glCreateBuffers(1, &ssbo);
     glNamedBufferStorage(ssbo, MAX_INSTANCES * sizeof(SharedStorageBuffer), nullptr, GL_DYNAMIC_STORAGE_BIT);
-    // glNamedBufferData(ssbo, sizeof(SSBO), SSBO, GL_STATIC_DRAW);
 
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo);
 
@@ -137,7 +134,7 @@ int main()
     glVertexArrayVertexBuffer(vao, 2, vboUV, 0, sizeof(float) * 2);
 
     // 3. Indirect Command Buffer Setup
-    DrawElementsIndirectCommand cmd[] = {
+    DrawIndexedIndirectCommand cmd[] = {
         {6, 1, 0, 0, 0},
         {3, 1, 6, 4, 1}};
     glCreateBuffers(1, &indirectBuffer);
@@ -221,7 +218,7 @@ int main()
         glUseProgram(program);
         glBindVertexArray(vao);
         glBindBuffer(GL_DRAW_INDIRECT_BUFFER, indirectBuffer);
-        glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr, 2, sizeof(DrawElementsIndirectCommand));
+        glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr, 2, sizeof(DrawIndexedIndirectCommand));
 
         // keep running
         glfwSwapBuffers(window);
