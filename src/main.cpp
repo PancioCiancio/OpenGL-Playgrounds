@@ -3,9 +3,10 @@
 #include <chrono>
 #include <thread>
 
+#include "renderer/color.h"
 #include "shaders/triangle.h"
 #include "geometries/primitives.h"
-#include "log_program_shader.h"
+#include "renderer/log_program_shader.h"
 
 // Graphics libraries
 #define GLFW_INCLUDE_NONE
@@ -13,13 +14,12 @@
 #define GLAD_GL_IMPLEMENTATION
 #include <gl.h>
 
-
-void GLFW_ERROR_CALLBACK(int error, const char* description)
+void glfw_error_callback(int error, const char* description)
 {
     printf("[glfw] ERROR: %s\n", description);
 }
 
-void GLFW_KEY_CALLBACK(GLFWwindow* window, int key, int scancode, int action, int mods)
+void glfw_key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
     if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE)
     {
@@ -69,7 +69,7 @@ int main()
         printf("[glfw] ERROR: initalization failed");
     }
 
-    glfwSetErrorCallback(GLFW_ERROR_CALLBACK);
+    glfwSetErrorCallback(glfw_error_callback);
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
@@ -81,16 +81,16 @@ int main()
         exit(EXIT_FAILURE);
     }
 
-    glfwSetKeyCallback(window, GLFW_KEY_CALLBACK);
+    glfwSetKeyCallback(window, glfw_key_callback);
     glfwMakeContextCurrent(window);
     gladLoadGL(glfwGetProcAddress);
     glfwSwapInterval(1);
-
+    
 
     // Define the handles of all buffers
     GLuint vao              = {};
     GLuint vboPos           = {};
-    GLuint vboNorm          = {};
+    GLuint vboColor         = {};   // @todo replace color with normals
     GLuint vboUV            = {};
     GLuint ebo              = {};
     GLuint ssbo             = {};
@@ -99,7 +99,7 @@ int main()
     // Create the buffers
     glCreateVertexArrays(1, &vao);
     glCreateBuffers(1, &vboPos);
-    glCreateBuffers(1, &vboNorm);
+    glCreateBuffers(1, &vboColor);
     glCreateBuffers(1, &vboUV);
     glCreateBuffers(1, &ebo);
     glCreateBuffers(1, &ssbo);
@@ -107,7 +107,7 @@ int main()
 
     // Initialize a buffer object's immutable data store
     glNamedBufferStorage(vboPos,    MAX_VERTEX_BUFFER_SIZE, nullptr, GL_DYNAMIC_STORAGE_BIT);
-    glNamedBufferStorage(vboNorm,   MAX_VERTEX_BUFFER_SIZE, nullptr, GL_DYNAMIC_STORAGE_BIT);
+    glNamedBufferStorage(vboColor,  MAX_VERTEX_BUFFER_SIZE, nullptr, GL_DYNAMIC_STORAGE_BIT);
     glNamedBufferStorage(vboUV,     MAX_VERTEX_BUFFER_SIZE, nullptr, GL_DYNAMIC_STORAGE_BIT);
     glNamedBufferStorage(ebo,       MAX_INDEX_BUFFER_SIZE,  nullptr, GL_DYNAMIC_STORAGE_BIT);
     glNamedBufferStorage(ssbo,      MAX_INSTANCES * sizeof(SharedStorageBuffer), nullptr, GL_DYNAMIC_STORAGE_BIT);
@@ -122,11 +122,11 @@ int main()
     glVertexArrayAttribBinding(vao, 0, 0);                              // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glVertexAttribBinding.xhtml
     glVertexArrayVertexBuffer(vao, 0, vboPos, 0, sizeof(float) * 3);    // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBindVertexBuffer.xhtml
 
-    // Shader's normals (location = 1)
+    // Shader's color (location = 1)
     glEnableVertexArrayAttrib(vao, 1);
-    glVertexArrayAttribFormat(vao, 1, 3, GL_FLOAT, GL_FALSE, 0);
+    glVertexArrayAttribFormat(vao, 1, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0);
     glVertexArrayAttribBinding(vao, 1, 1);                              // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glVertexAttribBinding.xhtml
-    glVertexArrayVertexBuffer(vao, 1, vboNorm, 0, sizeof(float) * 3);   // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBindVertexBuffer.xhtml
+    glVertexArrayVertexBuffer(vao, 1, vboColor, 0, sizeof(uint32_t));   // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBindVertexBuffer.xhtml
 
     // Shader's uvs (location = 2)
     glEnableVertexArrayAttrib(vao, 2);
@@ -135,16 +135,18 @@ int main()
     glVertexArrayVertexBuffer(vao, 2, vboUV, 0, sizeof(float) * 2);     // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBindVertexBuffer.xhtml
 
     // Write quad data
+    constexpr uint32_t quadVertexColor[] = {Color::White, Color::White, Color::White, Color::White};
     glNamedBufferSubData(vboPos,    0, sizeof(QUAD_POSITIONS),  QUAD_POSITIONS);
-    glNamedBufferSubData(vboNorm,   0, sizeof(QUAD_NORMALS),    QUAD_NORMALS);
+    glNamedBufferSubData(vboColor,  0, sizeof(quadVertexColor), quadVertexColor);
     glNamedBufferSubData(vboUV,     0, sizeof(QUAD_UVS),        QUAD_UVS);
     glNamedBufferSubData(ebo,       0, sizeof(QUAD_INDICES),    QUAD_INDICES);
 
     // Write triangle data taking into account the quad offsets
-    glNamedBufferSubData(vboPos,    sizeof(QUAD_POSITIONS), sizeof(TRIANGLE_POSITIONS),  TRIANGLE_POSITIONS);
-    glNamedBufferSubData(vboNorm,   sizeof(QUAD_NORMALS),   sizeof(TRIANGLE_NORMALS),    TRIANGLE_NORMALS);
-    glNamedBufferSubData(vboUV,     sizeof(QUAD_UVS),       sizeof(TRIANGLE_UVS),        TRIANGLE_UVS);
-    glNamedBufferSubData(ebo,       sizeof(QUAD_INDICES),   sizeof(TRIANGLE_INDICES),    TRIANGLE_INDICES);
+    constexpr uint32_t triangleVertexColor[] = {Color::White, Color::White, Color::White, Color::White};
+    glNamedBufferSubData(vboPos,    sizeof(QUAD_POSITIONS), sizeof(TRIANGLE_POSITIONS),     TRIANGLE_POSITIONS);
+    glNamedBufferSubData(vboColor,  sizeof(quadVertexColor),sizeof(triangleVertexColor),    triangleVertexColor);
+    glNamedBufferSubData(vboUV,     sizeof(QUAD_UVS),       sizeof(TRIANGLE_UVS),           TRIANGLE_UVS);
+    glNamedBufferSubData(ebo,       sizeof(QUAD_INDICES),   sizeof(TRIANGLE_INDICES),       TRIANGLE_INDICES);
 
     // Write the ssbo (model matrices of quad and triangle)
     glNamedBufferSubData(ssbo, 0, sizeof(SSBO), SSBO);
@@ -158,8 +160,8 @@ int main()
     const char* vboPosName = "VBO_Positions";
     glObjectLabel(GL_BUFFER, vboPos, -1, vboPosName);
 
-    const char* vboNormName = "VBO_Normals";
-    glObjectLabel(GL_BUFFER, vboNorm, -1, vboNormName);
+    const char* vboColorName = "VBO_Colors";
+    glObjectLabel(GL_BUFFER, vboColor, -1, vboColorName);
 
     const char* vboUVsName = "VBO_UVs";
     glObjectLabel(GL_BUFFER, vboUV, -1, vboUVsName);
@@ -175,20 +177,20 @@ int main()
     const GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vertexShader, 1, &Shader::Triangle::VERTEX, NULL);
     glCompileShader(vertexShader);
-    LogShaderErrors(GL_VERTEX_SHADER, vertexShader);
+    log_shader_errors(GL_VERTEX_SHADER, vertexShader);
 
     // Fragment shader
     const GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(fragmentShader, 1, &Shader::Triangle::FRAGMENT, NULL);
     glCompileShader(fragmentShader);
-    LogShaderErrors(GL_FRAGMENT_SHADER, fragmentShader);
+    log_shader_errors(GL_FRAGMENT_SHADER, fragmentShader);
 
     // Assembly program
     const GLuint program = glCreateProgram();
     glAttachShader(program, vertexShader);
     glAttachShader(program, fragmentShader);
     glLinkProgram(program);
-    LogProgramErrors(program);
+    log_program_errors(program);
 
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);

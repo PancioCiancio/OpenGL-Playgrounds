@@ -1,13 +1,14 @@
 #pragma once
 
 #include <gl.h>
+#include <cstdio>
 
-void LogShaderErrors(GLenum shaderType, GLuint shader)
+void log_shader_errors(GLenum shaderType, GLuint shader)
 {
     #ifdef DEBUG
     // Estimated a maximum of 4kb text
     constexpr GLint MAX_SHADER_FILE_SIZE = 1024u * 4u;
-    static GLchar INFO_LOG[1024 * 4] = {};
+    static GLchar INFO_LOG[MAX_SHADER_FILE_SIZE] = {};
 
     GLint status = {};
     glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
@@ -17,7 +18,7 @@ void LogShaderErrors(GLenum shaderType, GLuint shader)
 
     if (status == GL_FALSE)
     {
-        const char* strShaderType = NULL;
+        const char* strShaderType = nullptr;
         switch(shaderType)
         {
             case GL_VERTEX_SHADER:
@@ -42,12 +43,12 @@ void LogShaderErrors(GLenum shaderType, GLuint shader)
     #endif
 }
 
-void LogProgramErrors(GLuint program)
+void log_program_errors(GLuint program)
 {
     #ifdef DEBUG
     // Estimated a maximum of 4kb text
     constexpr GLint MAX_PROGRAM_FILE_SIZE = 1024u * 4u;
-    static GLchar INFO_LOG[1024 * 4] = {};
+    static GLchar INFO_LOG[MAX_PROGRAM_FILE_SIZE] = {};
 
     GLint status = {};
     glGetProgramiv(program, GL_LINK_STATUS, &status);

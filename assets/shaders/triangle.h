@@ -14,7 +14,7 @@ namespace Shader { namespace Triangle {
     };
 
     layout(location = 0) in vec3 vPos;
-    layout(location = 1) in vec3 vNorm;
+    layout(location = 1) in vec4 vColor;
     layout(location = 2) in vec2 vUVs;
     layout(std430, binding = 0) buffer InstanceBuffer
     {
@@ -22,7 +22,7 @@ namespace Shader { namespace Triangle {
     };
 
     out flat int vInstanceID;
-    out vec3 color;
+    out vec4 color;
     
     void main()
     {
@@ -30,7 +30,7 @@ namespace Shader { namespace Triangle {
         
         gl_Position = instances[actualInstanceIndex].modelMat * vec4(vPos, 1.0);
         vInstanceID = actualInstanceIndex;
-        color = vec3(vUVs, 0.0);
+        color = vColor;
     }
     )";
 
@@ -40,12 +40,12 @@ namespace Shader { namespace Triangle {
     #extension GL_ARB_shader_draw_parameters : require // Add this extension
 
     in flat int vInstanceID;
-    in vec3 color;
+    in vec4 color;
     out vec4 fragment;
 
     void main()
     {
-        fragment = vec4(color, 1.0);
+        fragment = color;
     }
     )";
 }}
