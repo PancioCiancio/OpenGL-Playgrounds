@@ -3,6 +3,10 @@ Originally use intrusive linked list to store the available blocks. However, thi
 In order to keep everything homogeneous, this version will store the offsets and metadata in additional separate arrays.
 
 
+## Questions '?'
+- How the API will look like?
+- How can reduce the internal fragmentation?
+
 ## Sample Code
 ```cpp
 ///

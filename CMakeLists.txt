@@ -26,3 +26,8 @@ target_include_directories(main
     "${CMAKE_SOURCE_DIR}//include"
     "${CMAKE_SOURCE_DIR}//third_party"
     "${CMAKE_SOURCE_DIR}//assets")
+
+
+# TESTS
+
+add_subdirectory(test)
