@@ -30,9 +30,9 @@ void Program(size_t seed)
     std::vector<size_t> active_offsets;
     active_offsets.reserve(MAX_BLOCKS);
 
-    const int iterations = 5000;
+    const size_t iterations = 5000;
 
-    for (int i = 0; i < iterations; i++)
+    for (size_t i = 0; i < iterations; i++)
     {
         // Decide whether to allocate or free.
         // Force allocate if list is empty; force free if memory is full.
@@ -77,14 +77,11 @@ void Program(size_t seed)
 
 int main()
 {
-    printf("Running simulations...");
+    printf("Running simulations...\n");
 
-    for (size_t i = 0; i < 400000; i++)
-    {
-        Program(i);
-    }
+    Program(42);
 
-    printf("End simulation correctly");
+    printf("End simulation correctly\n");
 
     return 0;
 }

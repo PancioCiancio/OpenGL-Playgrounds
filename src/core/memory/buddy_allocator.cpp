@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <stdint.h>
+#include <iostream>
 
 #include "alignment.h"
 
@@ -74,7 +75,7 @@ void BuddyCreate(size_t bufferSize, size_t blockSize, BuddyAllocatorHandle* ppAl
     const size_t nextBytes      = (maxSlots + kMax + 1) * sizeof(size_t);
     const size_t prevBytes      = (maxSlots + kMax + 1) * sizeof(size_t);
     const size_t metaBytes      = maxSlots * sizeof(size_t);
-    const size_t alignBytes     = alignof(size_t) - 1; 
+    const size_t alignBytes     = alignof(size_t) - 1;                      // Cover worst case scenario alignment
 
     const size_t totalMem = structBytes + nextBytes + prevBytes + metaBytes + alignBytes;
 
@@ -88,19 +89,10 @@ void BuddyCreate(size_t bufferSize, size_t blockSize, BuddyAllocatorHandle* ppAl
     allocator->kMin = kMin;
 
     // 4. Safely offset the pointers using byte arithmetic
-    uintptr_t memoryTracker = reinterpret_cast<uintptr_t>(totalMemBuffer);
-    
-    // Step forward by the size of the struct
-    memoryTracker = AlignPtr((memoryTracker + structBytes), alignof(size_t));
-    allocator->listNext = reinterpret_cast<size_t*>(memoryTracker);
-
-    // Step forward by the byte size of listNext
-    memoryTracker = AlignPtr((memoryTracker + nextBytes), alignof(size_t));
-    allocator->listPrev = reinterpret_cast<size_t*>(memoryTracker);
-
-    // Step forward by the byte size of listPrev
-    memoryTracker = AlignPtr((memoryTracker + prevBytes), alignof(size_t));
-    allocator->listMeta = reinterpret_cast<size_t*>(memoryTracker);
+    const uintptr_t memoryTracker = reinterpret_cast<uintptr_t>(totalMemBuffer);
+    allocator->listNext = reinterpret_cast<size_t*>(AlignPtr((memoryTracker + structBytes), alignof(size_t)));
+    allocator->listPrev = reinterpret_cast<size_t*>(AlignPtr((memoryTracker + structBytes + nextBytes), alignof(size_t)));
+    allocator->listMeta = reinterpret_cast<size_t*>(AlignPtr((memoryTracker + structBytes + nextBytes + prevBytes), alignof(size_t)));
 
     for (size_t i = 0; i <= allocator->kMax; i++)
     {
